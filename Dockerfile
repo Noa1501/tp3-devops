@@ -1,7 +1,7 @@
 # ==============================
 # STAGE 1 : Builder
 # ==============================
-FROM node:20-alpine AS builder
+FROM node:20-alpine3.21 AS builder
 WORKDIR /app
 
 COPY package*.json ./
@@ -18,9 +18,9 @@ RUN npm prune --production
 # ==============================
 # alpine brut = 7 MB au lieu de 130 MB avec node:20-alpine
 # On installe uniquement le binaire node, pas npm/npx/yarn
-FROM alpine:3.19 AS production
+FROM alpine:3.21 AS production
 RUN apk add --no-cache nodejs
-
+RUN apk upgrade --no-cache
 WORKDIR /app
 
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
