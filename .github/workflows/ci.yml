@@ -8,16 +8,13 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  # ========== JOB 1 : Lint + Tests ==========
   test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Set lowercase image name
-        run: echo "IMAGE_NAME_LOWER=$(echo '${{ env.IMAGE_NAME }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
@@ -34,11 +31,9 @@ jobs:
           name: coverage-report
           path: coverage/
 
-  # ========== JOB 2 : Build + Scan + Push ==========
   build-and-push:
     needs: test
     runs-on: ubuntu-latest
-    # Ne tourne QUE sur push main, pas sur les PR
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
       contents: read
@@ -47,31 +42,30 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Login sur GHCR avec le token GitHub automatique
+      # Génère le nom en minuscules comme step output
+      # → accessible via ${{ steps.image.outputs.name }} dans TOUTES les étapes suivantes
+      - name: Set lowercase image name
+        id: image
+        run: |
+          echo "name=$(echo '${{ env.REGISTRY }}/${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
+
       - uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Buildx = builder avancé qui supporte le cache et le multi-platform
       - uses: docker/setup-buildx-action@v3
 
-      # Génère automatiquement les tags :
-      # - ghcr.io/ton-user/task-api:latest
-      # - ghcr.io/ton-user/task-api:sha-abc1234
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: ${{ steps.image.outputs.name }}
           tags: |
             type=sha
             type=raw,value=latest
 
-      # Build + push avec cache GitHub Actions
-      # cache-from/to = réutilise les layers du build précédent
-      # → 2e build 3x plus rapide si le code n'a pas changé
       - name: Build and push
         uses: docker/build-push-action@v5
         with:
@@ -82,12 +76,10 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # Scan Trivy — exit-code: 1 = le pipeline échoue si CRITICAL trouvé
-      # Le job build-and-push sera rouge sur GitHub et bloquera tout merge
       - name: Trivy vulnerability scan
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          image-ref: ${{ steps.image.outputs.name }}:latest
           format: 'table'
           severity: 'CRITICAL,HIGH'
           exit-code: '1'
