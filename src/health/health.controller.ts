@@ -5,23 +5,31 @@ import { ConfigService } from '@nestjs/config';
 import type { Response } from 'express';
 import Redis from 'ioredis';
 
+// Interface explicite → plus de "any", ESLint est content
+interface HealthStatus {
+  status: 'healthy' | 'unhealthy';
+  timestamp: string;
+  database?: 'connected' | 'disconnected';
+  cache?: 'connected' | 'disconnected';
+}
+
 @Controller()
 export class HealthController {
-  private redis?: Redis;
+  private redis: Redis;
 
   constructor(
     @InjectDataSource() private dataSource: DataSource,
     private config: ConfigService,
   ) {
-    const redisUrl = this.config.get<string>('REDIS_URL');
-    if (redisUrl) {
-      this.redis = new Redis(redisUrl);
-    }
+    this.redis = new Redis(this.config.get<string>('REDIS_URL') ?? 'redis://localhost:6379');
   }
 
   @Get('health')
   async health(@Res() res: Response) {
-    const result: any = { status: 'healthy', timestamp: new Date().toISOString() };
+    const result: HealthStatus = {
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+    };
 
     try {
       await this.dataSource.query('SELECT 1');
@@ -31,17 +39,12 @@ export class HealthController {
       result.database = 'disconnected';
     }
 
-    if (!this.redis) {
+    try {
+      await this.redis.ping();
+      result.cache = 'connected';
+    } catch {
       result.status = 'unhealthy';
       result.cache = 'disconnected';
-    } else {
-      try {
-        await this.redis.ping();
-        result.cache = 'connected';
-      } catch {
-        result.status = 'unhealthy';
-        result.cache = 'disconnected';
-      }
     }
 
     res.status(result.status === 'healthy' ? 200 : 503).json(result);
