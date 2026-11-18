@@ -5,7 +5,7 @@ import { ConfigService } from '@nestjs/config';
 import type { Response } from 'express';
 import Redis from 'ioredis';
 
-// Interface explicite → plus de "any", ESLint est content
+// Interface explicite 
 interface HealthStatus {
   status: 'healthy' | 'unhealthy';
   timestamp: string;
